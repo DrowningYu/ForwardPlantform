@@ -17,6 +17,9 @@ public class SinkRouter implements OutputSink {
 
     private final AtomicLong outCount = new AtomicLong();
     private final AtomicLong errorCount = new AtomicLong();
+    /** 最近一次成功转发的时间戳（毫秒），0 表示尚未转发。 */
+    private final AtomicLong lastForwardAtMs = new AtomicLong();
+
     private volatile String lastError;
 
     public SinkRouter(Sink primary, ObjectMapper mapper) {
@@ -38,6 +41,7 @@ public class SinkRouter implements OutputSink {
         try {
             primary.send(payload);
             outCount.incrementAndGet();
+            lastForwardAtMs.set(System.currentTimeMillis());
         } catch (Exception e) {
             errorCount.incrementAndGet();
             lastError = e.getMessage();
@@ -63,6 +67,7 @@ public class SinkRouter implements OutputSink {
 
     public long getOutCount() { return outCount.get(); }
     public long getErrorCount() { return errorCount.get(); }
+    public long getLastForwardAtMs() { return lastForwardAtMs.get(); }
     public String getLastError() { return lastError; }
     public String describe() { return primary.describe(); }
 }

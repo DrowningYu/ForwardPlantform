@@ -23,7 +23,7 @@ public class OutputTargetService {
     }
 
     public List<ConfigCarrierDto> list() {
-        return repository.findAll().stream().map(this::toDto).toList();
+        return repository.findAllByOrderByIdAsc().stream().map(this::toDto).toList();
     }
 
     public ConfigCarrierDto get(Long id) {

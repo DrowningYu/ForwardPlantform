@@ -9,28 +9,30 @@
 
     <el-table :data="list" size="small" border>
       <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column prop="name" label="名称" />
+      <el-table-column prop="name" label="名称" width="180" show-overflow-tooltip />
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="row.running ? 'success' : (row.status === 'ERROR' ? 'danger' : 'info')">{{ row.status }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="数据源" width="120">
+      <el-table-column label="数据源" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ sourceName(row.sourceId) }}</template>
       </el-table-column>
-      <el-table-column label="输出目标" width="120">
+      <el-table-column label="输出目标" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ targetName(row.outputTargetId) }}</template>
       </el-table-column>
       <el-table-column prop="workerThreads" label="Worker" width="80" />
       <el-table-column prop="logRetentionDays" label="日志保留(天)" width="110" />
-      <el-table-column label="操作" width="360">
+      <el-table-column label="操作" width="350" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" type="success" :disabled="row.running" @click="start(row)">启动</el-button>
-          <el-button size="small" type="warning" :disabled="!row.running" @click="stop(row)">停止</el-button>
-          <el-button size="small" @click="restart(row)">重启</el-button>
-          <el-button size="small" type="primary" @click="edit(row)">配置</el-button>
-          <el-button size="small" @click="goEditor(row)">代码/调试</el-button>
-          <el-button size="small" type="danger" @click="remove(row)">删除</el-button>
+          <div class="action-btns">
+            <el-button size="small" type="success" :disabled="row.running" @click="start(row)">启动</el-button>
+            <el-button size="small" type="warning" :disabled="!row.running" @click="stop(row)">停止</el-button>
+            <el-button size="small" @click="restart(row)">重启</el-button>
+            <el-button size="small" type="primary" @click="edit(row)">配置</el-button>
+            <el-button size="small" @click="goEditor(row)">代码/调试</el-button>
+            <el-button size="small" type="danger" @click="remove(row)">删除</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -99,9 +101,23 @@ function edit(row: Protocol) {
   dialog.value = true
 }
 
+function buildPayload() {
+  return {
+    name: form.name,
+    description: form.description,
+    sourceId: form.sourceId,
+    outputTargetId: form.outputTargetId,
+    ringBufferSize: form.ringBufferSize,
+    workerThreads: form.workerThreads,
+    logRetentionDays: form.logRetentionDays,
+    sampleRate: form.sampleRate
+  }
+}
+
 async function save() {
-  if (form.id) await api.updateProtocol(form.id, form)
-  else await api.createProtocol(form)
+  const body = buildPayload()
+  if (form.id) await api.updateProtocol(form.id, body)
+  else await api.createProtocol(body)
   ElMessage.success('已保存')
   dialog.value = false
   load()
@@ -127,4 +143,13 @@ onMounted(load)
 
 <style scoped>
 .card-head { display: flex; justify-content: space-between; align-items: center; }
+.action-btns {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+}
+.action-btns :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
 </style>

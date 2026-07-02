@@ -40,9 +40,14 @@ export interface Protocol {
 
 export interface RuntimeStatus {
   protocolId: number
+  protocolName?: string
   status: string
   statusMessage?: string
+  sourceName?: string
+  sourceConfig?: string
   sourceDesc: string
+  sinkName?: string
+  sinkConfig?: string
   sinkDesc: string
   in: number
   processed: number
@@ -54,6 +59,8 @@ export interface RuntimeStatus {
   bufferSize: number
   bufferRemaining: number
   lastError?: string
+  /** 最近一次成功转发时间（epoch ms） */
+  lastForwardAtMs?: number | null
 }
 
 export const api = {

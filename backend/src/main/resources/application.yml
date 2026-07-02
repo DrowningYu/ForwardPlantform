@@ -6,9 +6,11 @@ spring:
     name: forward-platform
   datasource:
     # stringtype=unspecified 允许将 JSON 字符串直接写入 jsonb 列
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:forward_platform}?stringtype=unspecified
-    username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:postgres}
+    # 环境变量统一 FP_ 前缀，避免与同机其他服务冲突
+    # currentSchema 显式指定 schema，默认 public；正式环境可通过 FP_DB_SCHEMA 切换
+    url: jdbc:postgresql://${FP_DB_HOST:localhost}:${FP_DB_PORT:5432}/${FP_DB_NAME:forward_platform}?currentSchema=${FP_DB_SCHEMA:public}&stringtype=unspecified
+    username: ${FP_DB_USER:postgres}
+    password: ${FP_DB_PASSWORD:123123}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 4
@@ -21,12 +23,16 @@ spring:
     show-sql: false
     properties:
       hibernate:
+        default_schema: ${FP_DB_SCHEMA:public}
         jdbc:
           time_zone: UTC
   flyway:
     enabled: true
     baseline-on-migrate: true
     locations: classpath:db/migration
+    schemas: ${FP_DB_SCHEMA:public}
+    default-schema: ${FP_DB_SCHEMA:public}
+    create-schemas: true
 
 management:
   endpoints:

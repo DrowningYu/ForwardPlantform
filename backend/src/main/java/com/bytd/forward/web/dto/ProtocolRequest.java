@@ -1,5 +1,8 @@
 package com.bytd.forward.web.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ProtocolRequest {
     public String name;
     public String description;

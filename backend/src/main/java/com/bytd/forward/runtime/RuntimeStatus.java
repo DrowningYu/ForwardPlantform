@@ -5,9 +5,14 @@ package com.bytd.forward.runtime;
  */
 public record RuntimeStatus(
         long protocolId,
+        String protocolName,
         String status,
         String statusMessage,
+        String sourceName,
+        String sourceConfig,
         String sourceDesc,
+        String sinkName,
+        String sinkConfig,
         String sinkDesc,
         long in,
         long processed,
@@ -18,6 +23,8 @@ public record RuntimeStatus(
         double avgCostMs,
         int bufferSize,
         long bufferRemaining,
-        String lastError
+        String lastError,
+        /** 最近一次成功转发时间（epoch ms），null 表示运行以来尚未转发 */
+        Long lastForwardAtMs
 ) {
 }

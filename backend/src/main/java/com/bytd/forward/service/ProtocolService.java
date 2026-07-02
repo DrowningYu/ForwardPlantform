@@ -56,7 +56,7 @@ public class ProtocolService {
     }
 
     public List<ProtocolDto> list() {
-        return protocolRepository.findAll().stream().map(this::toDto).toList();
+        return protocolRepository.findAllByOrderByIdAsc().stream().map(this::toDto).toList();
     }
 
     public ProtocolDto get(Long id) {
@@ -115,8 +115,10 @@ public class ProtocolService {
     public void delete(Long id) {
         runtimeManager.stop(id);
         ProtocolEntity p = find(id);
+        // 必须先清空 current_version_id 并刷盘，否则删除 script_version 会触发
+        // fk_protocol_current_version 外键约束（protocol 仍引用该版本 id）
         p.setCurrentVersionId(null);
-        protocolRepository.save(p);
+        protocolRepository.saveAndFlush(p);
         versionRepository.deleteByProtocolId(id);
         protocolRepository.deleteById(id);
     }

@@ -8,4 +8,5 @@ import java.util.List;
 public interface ProtocolRepository extends JpaRepository<ProtocolEntity, Long> {
     boolean existsByName(String name);
     List<ProtocolEntity> findByEnabledTrue();
+    List<ProtocolEntity> findAllByOrderByIdAsc();
 }

@@ -188,9 +188,14 @@ public class ProtocolRuntime {
     public RuntimeStatus snapshot() {
         return new RuntimeStatus(
                 protocolId,
+                name,
                 status,
                 statusMessage,
+                dataSource.getName(),
+                dataSource.getConfig(),
                 connector == null ? "-" : connector.describe(),
+                outputTarget.getName(),
+                outputTarget.getConfig(),
                 router == null ? "-" : router.describe(),
                 metrics.getIn(),
                 metrics.getProcessed(),
@@ -202,8 +207,17 @@ public class ProtocolRuntime {
                 ringBufferSize,
                 ringBuffer == null ? ringBufferSize : ringBuffer.remainingCapacity(),
                 metrics.getLastError() != null ? metrics.getLastError()
-                        : (router == null ? null : router.getLastError())
+                        : (router == null ? null : router.getLastError()),
+                lastForwardAtMs(router)
         );
+    }
+
+    private static Long lastForwardAtMs(SinkRouter router) {
+        if (router == null) {
+            return null;
+        }
+        long ms = router.getLastForwardAtMs();
+        return ms > 0 ? ms : null;
     }
 
     public String getStatus() { return status; }

@@ -61,8 +61,18 @@ mvn -DskipTests package
 java -jar target/forward-platform.jar
 ```
 
-数据库连接可用环境变量覆盖：`DB_HOST` `DB_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD`。
-Flyway 会自动建表；应用启动时会预建当天及未来数天的日志分区。
+数据库连接可用环境变量覆盖（均带 `FP_` 前缀，避免与同机其他服务冲突）：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `FP_DB_HOST` | `localhost` | 数据库主机 |
+| `FP_DB_PORT` | `5432` | 端口 |
+| `FP_DB_NAME` | `forward_platform` | 数据库名 |
+| `FP_DB_SCHEMA` | `public` | Schema |
+| `FP_DB_USER` | `postgres` | 用户名 |
+| `FP_DB_PASSWORD` | `postgres` | 密码 |
+
+Flyway 会在指定 schema 下自动建表（不存在则创建）；应用启动时会预建当天及未来数天的日志分区。
 
 ### 3. 启动前端
 
