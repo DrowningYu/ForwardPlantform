@@ -42,17 +42,20 @@ public class ProtocolService {
     private final ProtocolRuntimeManager runtimeManager;
     private final ScriptEngineService engine;
     private final ForwardProperties props;
+    private final ProtocolBindingWarningService bindingWarningService;
 
     public ProtocolService(ProtocolRepository protocolRepository,
                            ScriptVersionRepository versionRepository,
                            ProtocolRuntimeManager runtimeManager,
                            ScriptEngineService engine,
-                           ForwardProperties props) {
+                           ForwardProperties props,
+                           ProtocolBindingWarningService bindingWarningService) {
         this.protocolRepository = protocolRepository;
         this.versionRepository = versionRepository;
         this.runtimeManager = runtimeManager;
         this.engine = engine;
         this.props = props;
+        this.bindingWarningService = bindingWarningService;
     }
 
     public List<ProtocolDto> list() {
@@ -107,7 +110,14 @@ public class ProtocolService {
         if (req.logRetentionDays != null) p.setLogRetentionDays(req.logRetentionDays);
         if (req.sampleRate != null) p.setSampleRate(req.sampleRate);
         p = protocolRepository.save(p);
-        runtimeManager.reloadIfRunning(id);
+        if (runtimeManager.isRunning(id)) {
+            try {
+                restart(id, true);
+            } catch (ProtocolBindingBlockedException e) {
+                runtimeManager.stop(id);
+                throw e;
+            }
+        }
         return toDto(p);
     }
 
@@ -123,7 +133,8 @@ public class ProtocolService {
         protocolRepository.deleteById(id);
     }
 
-    public void start(Long id) {
+    public void start(Long id, boolean acknowledgeWarnings) {
+        bindingWarningService.assertCanStart(id, acknowledgeWarnings);
         runtimeManager.start(id);
     }
 
@@ -131,7 +142,8 @@ public class ProtocolService {
         runtimeManager.stop(id);
     }
 
-    public void restart(Long id) {
+    public void restart(Long id, boolean acknowledgeWarnings) {
+        bindingWarningService.assertCanStart(id, acknowledgeWarnings);
         runtimeManager.restart(id);
     }
 

@@ -13,11 +13,14 @@ import com.bytd.forward.engine.ScriptEngineService;
 import com.bytd.forward.log.AsyncLogWriter;
 import com.bytd.forward.runtime.sink.SinkFactory;
 import com.bytd.forward.runtime.source.SourceConnectorFactory;
+import com.bytd.forward.service.ProtocolBindingBlockedException;
+import com.bytd.forward.service.ProtocolBindingWarningService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -50,6 +53,7 @@ public class ProtocolRuntimeManager {
     private final AsyncLogWriter logWriter;
     private final ObjectMapper mapper;
     private final ForwardProperties props;
+    private final ProtocolBindingWarningService bindingWarningService;
 
     public ProtocolRuntimeManager(ProtocolRepository protocolRepository,
                                   DataSourceRepository dataSourceRepository,
@@ -60,7 +64,8 @@ public class ProtocolRuntimeManager {
                                   SinkFactory sinkFactory,
                                   AsyncLogWriter logWriter,
                                   ObjectMapper mapper,
-                                  ForwardProperties props) {
+                                  ForwardProperties props,
+                                  @Lazy ProtocolBindingWarningService bindingWarningService) {
         this.protocolRepository = protocolRepository;
         this.dataSourceRepository = dataSourceRepository;
         this.outputTargetRepository = outputTargetRepository;
@@ -71,6 +76,7 @@ public class ProtocolRuntimeManager {
         this.logWriter = logWriter;
         this.mapper = mapper;
         this.props = props;
+        this.bindingWarningService = bindingWarningService;
     }
 
     private Object lockFor(Long id) {
@@ -194,7 +200,10 @@ public class ProtocolRuntimeManager {
         List<ProtocolEntity> enabled = protocolRepository.findByEnabledTrue();
         for (ProtocolEntity p : enabled) {
             try {
+                bindingWarningService.assertCanStart(p.getId(), true);
                 start(p.getId());
+            } catch (ProtocolBindingBlockedException e) {
+                log.error("开机自启协议[{}]被绑定规则阻断: {}", p.getId(), e.getMessage());
             } catch (Exception e) {
                 log.error("开机自启协议[{}]失败: {}", p.getId(), e.getMessage());
             }

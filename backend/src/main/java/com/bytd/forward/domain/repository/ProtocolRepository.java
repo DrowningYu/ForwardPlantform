@@ -9,4 +9,8 @@ public interface ProtocolRepository extends JpaRepository<ProtocolEntity, Long> 
     boolean existsByName(String name);
     List<ProtocolEntity> findByEnabledTrue();
     List<ProtocolEntity> findAllByOrderByIdAsc();
+    List<ProtocolEntity> findBySourceId(Long sourceId);
+    List<ProtocolEntity> findByOutputTargetId(Long outputTargetId);
+    List<ProtocolEntity> findBySourceIdAndIdNot(Long sourceId, Long id);
+    List<ProtocolEntity> findByOutputTargetIdAndIdNot(Long outputTargetId, Long id);
 }

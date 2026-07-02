@@ -1,11 +1,15 @@
-import axios from 'axios'
+import axios, { AxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
 
 const http = axios.create({ baseURL: '/api', timeout: 30000 })
 
 http.interceptors.response.use(
   (resp) => resp.data,
-  (err) => {
+  (err: AxiosError<any>) => {
+    const code = err?.response?.data?.code
+    if (code === 'BINDING_BLOCKED' || code === 'BINDING_WARNING') {
+      return Promise.reject(err)
+    }
     const msg = err?.response?.data?.error || err.message || '请求失败'
     ElMessage.error(msg)
     return Promise.reject(err)
@@ -36,6 +40,20 @@ export interface Protocol {
   workerThreads: number
   logRetentionDays: number
   sampleRate: number
+}
+
+export interface BindingWarning {
+  code: string
+  level: 'BLOCK' | 'WARN'
+  resourceRole: 'SOURCE' | 'SINK'
+  resourceName: string
+  message: string
+  relatedProtocolNames: string[]
+}
+
+export interface BindingCheckResult {
+  blockers: BindingWarning[]
+  warnings: BindingWarning[]
 }
 
 export interface RuntimeStatus {
@@ -82,9 +100,22 @@ export const api = {
   createProtocol: (body: any): Promise<Protocol> => http.post('/protocols', body),
   updateProtocol: (id: number, body: any): Promise<Protocol> => http.put(`/protocols/${id}`, body),
   deleteProtocol: (id: number) => http.delete(`/protocols/${id}`),
-  startProtocol: (id: number): Promise<Protocol> => http.post(`/protocols/${id}/start`),
+  getBindingWarnings: (params: {
+    protocolId?: number
+    sourceId?: number
+    outputTargetId?: number
+  }): Promise<BindingCheckResult> => http.get('/protocols/binding-warnings', { params }),
+  checkProtocolStart: (id: number): Promise<BindingCheckResult> =>
+    http.get(`/protocols/${id}/start-check`),
+  startProtocol: (id: number, opts?: { acknowledgeWarnings?: boolean }): Promise<Protocol> =>
+    http.post(`/protocols/${id}/start`, null, {
+      params: { acknowledgeWarnings: opts?.acknowledgeWarnings ?? false }
+    }),
   stopProtocol: (id: number): Promise<Protocol> => http.post(`/protocols/${id}/stop`),
-  restartProtocol: (id: number): Promise<Protocol> => http.post(`/protocols/${id}/restart`),
+  restartProtocol: (id: number, opts?: { acknowledgeWarnings?: boolean }): Promise<Protocol> =>
+    http.post(`/protocols/${id}/restart`, null, {
+      params: { acknowledgeWarnings: opts?.acknowledgeWarnings ?? false }
+    }),
 
   // 脚本
   listVersions: (pid: number): Promise<any[]> => http.get(`/protocols/${pid}/scripts`),
