@@ -1,0 +1,64 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: forward-platform
+  datasource:
+    # stringtype=unspecified 允许将 JSON 字符串直接写入 jsonb 列
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:forward_platform}?stringtype=unspecified
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 4
+      connection-timeout: 30000
+      pool-name: forward-hikari
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: forward-platform
+
+# 平台自定义配置
+forward:
+  # 日志异步写入
+  log:
+    queue-capacity: 100000
+    batch-size: 500
+    flush-interval-ms: 1000
+  # 分区维护
+  partition:
+    # 每天预建未来多少天的分区
+    pre-create-days: 3
+    # 全局兜底最小保留天数（各协议 log_retention_days 的下限保护）
+    min-retention-days: 1
+  # 脚本执行
+  script:
+    # 单条消息处理超时（毫秒），超时中断
+    exec-timeout-ms: 3000
+    # 编译结果缓存最大条目
+    compiled-cache-size: 256
+  # 运行时默认参数
+  runtime:
+    default-ring-buffer-size: 16384
+    default-worker-threads: 4
+    # 调试抓取实时样本的最大条数
+    debug-capture-max: 20
