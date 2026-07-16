@@ -1,11 +1,17 @@
 package com.bytd.forward.service;
 
 import com.bytd.forward.domain.entity.OutputTargetEntity;
+import com.bytd.forward.domain.entity.ProtocolEntity;
 import com.bytd.forward.domain.repository.OutputTargetRepository;
+import com.bytd.forward.domain.repository.ProtocolRepository;
+import com.bytd.forward.runtime.ProtocolRuntimeManager;
 import com.bytd.forward.web.dto.ConfigCarrierDto;
 import com.bytd.forward.web.dto.OutputTargetRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,11 +20,20 @@ import java.util.List;
 @Service
 public class OutputTargetService {
 
+    private static final Logger log = LoggerFactory.getLogger(OutputTargetService.class);
+
     private final OutputTargetRepository repository;
+    private final ProtocolRepository protocolRepository;
+    private final ProtocolRuntimeManager runtimeManager;
     private final ObjectMapper mapper;
 
-    public OutputTargetService(OutputTargetRepository repository, ObjectMapper mapper) {
+    public OutputTargetService(OutputTargetRepository repository,
+                               ProtocolRepository protocolRepository,
+                               @Lazy ProtocolRuntimeManager runtimeManager,
+                               ObjectMapper mapper) {
         this.repository = repository;
+        this.protocolRepository = protocolRepository;
+        this.runtimeManager = runtimeManager;
         this.mapper = mapper;
     }
 
@@ -45,7 +60,20 @@ public class OutputTargetService {
         if (req.name != null) e.setName(req.name);
         if (req.type != null) e.setType(req.type);
         if (req.config != null) e.setConfig(req.config.toString());
-        return toDto(repository.save(e));
+        ConfigCarrierDto dto = toDto(repository.save(e));
+        reloadRunningProtocols(id);
+        return dto;
+    }
+
+    /** 输出目标配置变更后重启引用它的运行中协议，使共享连接按新配置重建。 */
+    private void reloadRunningProtocols(Long targetId) {
+        for (ProtocolEntity p : protocolRepository.findByOutputTargetId(targetId)) {
+            try {
+                runtimeManager.reloadIfRunning(p.getId());
+            } catch (Exception ex) {
+                log.warn("输出目标[{}]变更后重启协议[{}]失败: {}", targetId, p.getId(), ex.getMessage());
+            }
+        }
     }
 
     @Transactional

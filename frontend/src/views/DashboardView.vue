@@ -9,6 +9,31 @@
       <el-col :span="4"><el-card shadow="never"><div class="stat"><div class="num">{{ overview.recordQueueSize ?? 0 }}</div><div class="label">日志队列</div></div></el-card></el-col>
     </el-row>
 
+    <el-row :gutter="16" style="margin-top: 16px">
+      <el-col :span="12">
+        <el-card shadow="never">
+          <template #header><span>CPU 占用</span></template>
+          <ResourceDonutChart
+            title="CPU"
+            :center-text="cpuCenterText"
+            :segments="cpuSegments"
+            :unavailable="!sys.available"
+          />
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card shadow="never">
+          <template #header><span>内存占用</span></template>
+          <ResourceDonutChart
+            title="内存"
+            :center-text="memCenterText"
+            :segments="memSegments"
+            :unavailable="!sys.available"
+          />
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-card shadow="never" style="margin-top: 16px">
       <template #header>
         <div class="card-head">
@@ -79,15 +104,108 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import { api, RuntimeStatus } from '../api'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { api, Overview, RuntimeStatus } from '../api'
+import ResourceDonutChart, { type DonutSegment } from '../components/ResourceDonutChart.vue'
 
-const overview = ref<any>({})
+const COLOR_REMAINING = '#c0c4cc'
+const COLOR_PROCESS = '#1d39c4'
+const COLOR_OTHER = '#79bbff'
+
+const overview = ref<Overview>({
+  runningCount: 0,
+  totalIn: 0,
+  totalOut: 0,
+  totalScriptError: 0,
+  totalTimeout: 0,
+  totalSinkError: 0,
+  logQueueSize: 0,
+  recordQueueSize: 0,
+  droppedLogs: 0,
+  droppedRecords: 0
+})
 const statuses = ref<RuntimeStatus[]>([])
 const auto = ref(true)
-let timer: any = null
+let timer: ReturnType<typeof setInterval> | null = null
 
 const ONE_HOUR_MS = 60 * 60 * 1000
+
+const sys = computed(() => overview.value.systemResource ?? {
+  cpuRemainingPercent: 0,
+  cpuProcessPercent: 0,
+  cpuOtherPercent: 0,
+  memTotalBytes: 0,
+  memFreeBytes: 0,
+  memProcessBytes: 0,
+  memOtherBytes: 0,
+  available: false
+})
+
+const cpuCenterText = computed(() => {
+  if (!sys.value.available) return 'N/A'
+  const used = sys.value.cpuProcessPercent + sys.value.cpuOtherPercent
+  return `${used.toFixed(1)}%`
+})
+
+const memCenterText = computed(() => {
+  if (!sys.value.available || !sys.value.memTotalBytes) return 'N/A'
+  const used = sys.value.memTotalBytes - sys.value.memFreeBytes
+  return formatBytes(used)
+})
+
+const cpuSegments = computed((): DonutSegment[] => [
+  {
+    label: '剩余 CPU',
+    value: sys.value.cpuRemainingPercent,
+    color: COLOR_REMAINING,
+    display: `${sys.value.cpuRemainingPercent.toFixed(1)}%`
+  },
+  {
+    label: '本服务 CPU',
+    value: sys.value.cpuProcessPercent,
+    color: COLOR_PROCESS,
+    display: `${sys.value.cpuProcessPercent.toFixed(1)}%`
+  },
+  {
+    label: '其他 CPU',
+    value: sys.value.cpuOtherPercent,
+    color: COLOR_OTHER,
+    display: `${sys.value.cpuOtherPercent.toFixed(1)}%`
+  }
+])
+
+const memSegments = computed((): DonutSegment[] => [
+  {
+    label: '空闲内存',
+    value: sys.value.memFreeBytes,
+    color: COLOR_REMAINING,
+    display: formatBytes(sys.value.memFreeBytes)
+  },
+  {
+    label: '本服务内存',
+    value: sys.value.memProcessBytes,
+    color: COLOR_PROCESS,
+    display: formatBytes(sys.value.memProcessBytes)
+  },
+  {
+    label: '其他内存',
+    value: sys.value.memOtherBytes,
+    color: COLOR_OTHER,
+    display: formatBytes(sys.value.memOtherBytes)
+  }
+])
+
+function formatBytes(bytes: number) {
+  if (!bytes || bytes < 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = bytes
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
 
 function formatLastForward(ts?: number | null) {
   if (!ts) return '-'
@@ -123,7 +241,7 @@ async function refresh() {
   try {
     overview.value = await api.overview()
     statuses.value = await api.allStatus()
-  } catch (e) {
+  } catch {
     // 错误已由拦截器提示
   }
 }
@@ -132,7 +250,7 @@ onMounted(() => {
   refresh()
   timer = setInterval(() => { if (auto.value) refresh() }, 5000)
 })
-onUnmounted(() => timer && clearInterval(timer))
+onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
 
 <style scoped>

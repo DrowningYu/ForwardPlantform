@@ -7,6 +7,7 @@ public class ProtocolRequest {
     public String name;
     public String description;
     public Long sourceId;
+    public String sourceTopics;
     public Long outputTargetId;
     public Integer ringBufferSize;
     public Integer workerThreads;

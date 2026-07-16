@@ -31,6 +31,7 @@
           <el-select v-model="form.type" @change="onTypeChange">
             <el-option label="MQTT" value="MQTT" />
             <el-option label="KAFKA" value="KAFKA" />
+            <el-option label="HTTP 接收" value="HTTP" />
           </el-select>
         </el-form-item>
 
@@ -54,6 +55,25 @@
           <el-form-item label="安全协议"><el-input v-model="cfg.securityProtocol" placeholder="SASL_PLAINTEXT 可空" /></el-form-item>
           <el-form-item label="用户名"><el-input v-model="cfg.username" /></el-form-item>
           <el-form-item label="密码"><el-input v-model="cfg.password" type="password" show-password /></el-form-item>
+        </template>
+
+        <template v-else-if="form.type === 'HTTP'">
+          <el-form-item label="接口名称">
+            <el-input v-model="cfg.path" placeholder="如 bridge-abc（仅字母数字-_）" />
+          </el-form-item>
+          <el-form-item label="请求方法">
+            <el-select v-model="cfg.method">
+              <el-option label="POST（请求体为消息内容）" value="POST" />
+              <el-option label="GET（query 参数转为 JSON）" value="GET" />
+            </el-select>
+          </el-form-item>
+          <el-alert
+            v-if="cfg.path"
+            :title="`上游推送地址：${ingestUrl(cfg.path)}（协议启动后生效）`"
+            type="info"
+            show-icon
+            :closable="false"
+          />
         </template>
       </el-form>
       <template #footer>
@@ -80,7 +100,13 @@ function summarize(row: ConfigCarrier) {
   const c = row.config || {}
   if (row.type === 'MQTT') return `${c.url} topics=${c.topics}`
   if (row.type === 'KAFKA') return `${c.bootstrapServers} topics=${c.topics} group=${c.groupId}`
+  if (row.type === 'HTTP') return `${ingestUrl(c.path)} method=${c.method || 'POST'}`
   return JSON.stringify(c)
+}
+
+function ingestUrl(path: string) {
+  const p = String(path || '').replace(/^\/+|\/+$/g, '')
+  return `${window.location.origin}/ingest/${p}`
 }
 
 function resetCfg(preset: any = {}) {
@@ -90,7 +116,8 @@ function resetCfg(preset: any = {}) {
 
 function onTypeChange() {
   if (form.type === 'MQTT') resetCfg({ qos: 1 })
-  else resetCfg({ autoOffsetReset: 'latest' })
+  else if (form.type === 'KAFKA') resetCfg({ autoOffsetReset: 'latest' })
+  else resetCfg({ method: 'POST' })
 }
 
 function openCreate() {

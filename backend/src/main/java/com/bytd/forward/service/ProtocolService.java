@@ -72,6 +72,7 @@ public class ProtocolService {
         p.setName(req.name);
         p.setDescription(req.description);
         p.setSourceId(req.sourceId);
+        p.setSourceTopics(normalizeTopics(req.sourceTopics));
         p.setOutputTargetId(req.outputTargetId);
         p.setRingBufferSize(req.ringBufferSize != null ? req.ringBufferSize : props.getRuntime().getDefaultRingBufferSize());
         p.setWorkerThreads(req.workerThreads != null ? req.workerThreads : props.getRuntime().getDefaultWorkerThreads());
@@ -104,6 +105,7 @@ public class ProtocolService {
         if (req.name != null) p.setName(req.name);
         p.setDescription(req.description);
         if (req.sourceId != null) p.setSourceId(req.sourceId);
+        p.setSourceTopics(normalizeTopics(req.sourceTopics));
         if (req.outputTargetId != null) p.setOutputTargetId(req.outputTargetId);
         if (req.ringBufferSize != null) p.setRingBufferSize(req.ringBufferSize);
         if (req.workerThreads != null) p.setWorkerThreads(req.workerThreads);
@@ -156,7 +158,12 @@ public class ProtocolService {
         return new ProtocolDto(
                 p.getId(), p.getName(), p.getDescription(), p.getStatus(), p.getStatusMessage(),
                 p.isEnabled(), runtimeManager.isRunning(p.getId()),
-                p.getSourceId(), p.getOutputTargetId(), p.getCurrentVersionId(),
+                p.getSourceId(), p.getSourceTopics(), p.getOutputTargetId(), p.getCurrentVersionId(),
                 p.getRingBufferSize(), p.getWorkerThreads(), p.getLogRetentionDays(), p.getSampleRate());
+    }
+
+    /** 空白串统一存为 NULL（= 接收全部 topic）。 */
+    private static String normalizeTopics(String topics) {
+        return (topics == null || topics.isBlank()) ? null : topics.trim();
     }
 }

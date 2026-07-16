@@ -126,6 +126,9 @@ public class DebugService {
 
         DataSourceEntity ds = dataSourceRepository.findById(sourceId)
                 .orElseThrow(() -> new IllegalArgumentException("数据源不存在: " + sourceId));
+        if ("HTTP".equalsIgnoreCase(ds.getType())) {
+            throw new IllegalArgumentException("HTTP 推送型数据源不支持实时抓取，请直接向 /ingest 接口发送测试数据");
+        }
         DataSourceEntity clone = withDebugIdentity(ds);
 
         LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>();

@@ -10,6 +10,7 @@ public record OverviewDto(
         int logQueueSize,
         int recordQueueSize,
         long droppedLogs,
-        long droppedRecords
+        long droppedRecords,
+        SystemResourceDto systemResource
 ) {
 }

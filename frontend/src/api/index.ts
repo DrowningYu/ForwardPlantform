@@ -34,6 +34,7 @@ export interface Protocol {
   enabled: boolean
   running: boolean
   sourceId?: number
+  sourceTopics?: string
   outputTargetId?: number
   currentVersionId?: number
   ringBufferSize: number
@@ -54,6 +55,31 @@ export interface BindingWarning {
 export interface BindingCheckResult {
   blockers: BindingWarning[]
   warnings: BindingWarning[]
+}
+
+export interface SystemResource {
+  cpuRemainingPercent: number
+  cpuProcessPercent: number
+  cpuOtherPercent: number
+  memTotalBytes: number
+  memFreeBytes: number
+  memProcessBytes: number
+  memOtherBytes: number
+  available: boolean
+}
+
+export interface Overview {
+  runningCount: number
+  totalIn: number
+  totalOut: number
+  totalScriptError: number
+  totalTimeout: number
+  totalSinkError: number
+  logQueueSize: number
+  recordQueueSize: number
+  droppedLogs: number
+  droppedRecords: number
+  systemResource?: SystemResource
 }
 
 export interface RuntimeStatus {
@@ -135,5 +161,5 @@ export const api = {
 
   // 状态
   allStatus: (): Promise<RuntimeStatus[]> => http.get('/status'),
-  overview: (): Promise<any> => http.get('/status/overview')
+  overview: (): Promise<Overview> => http.get('/status/overview')
 }

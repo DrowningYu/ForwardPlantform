@@ -11,8 +11,8 @@ import com.bytd.forward.domain.repository.ProtocolRepository;
 import com.bytd.forward.domain.repository.ScriptVersionRepository;
 import com.bytd.forward.engine.ScriptEngineService;
 import com.bytd.forward.log.AsyncLogWriter;
-import com.bytd.forward.runtime.sink.SinkFactory;
-import com.bytd.forward.runtime.source.SourceConnectorFactory;
+import com.bytd.forward.runtime.shared.SharedSinkManager;
+import com.bytd.forward.runtime.shared.SharedSourceManager;
 import com.bytd.forward.service.ProtocolBindingBlockedException;
 import com.bytd.forward.service.ProtocolBindingWarningService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,8 +48,8 @@ public class ProtocolRuntimeManager {
     private final OutputTargetRepository outputTargetRepository;
     private final ScriptVersionRepository scriptVersionRepository;
     private final ScriptEngineService engine;
-    private final SourceConnectorFactory sourceFactory;
-    private final SinkFactory sinkFactory;
+    private final SharedSourceManager sharedSources;
+    private final SharedSinkManager sharedSinks;
     private final AsyncLogWriter logWriter;
     private final ObjectMapper mapper;
     private final ForwardProperties props;
@@ -60,8 +60,8 @@ public class ProtocolRuntimeManager {
                                   OutputTargetRepository outputTargetRepository,
                                   ScriptVersionRepository scriptVersionRepository,
                                   ScriptEngineService engine,
-                                  SourceConnectorFactory sourceFactory,
-                                  SinkFactory sinkFactory,
+                                  SharedSourceManager sharedSources,
+                                  SharedSinkManager sharedSinks,
                                   AsyncLogWriter logWriter,
                                   ObjectMapper mapper,
                                   ForwardProperties props,
@@ -71,8 +71,8 @@ public class ProtocolRuntimeManager {
         this.outputTargetRepository = outputTargetRepository;
         this.scriptVersionRepository = scriptVersionRepository;
         this.engine = engine;
-        this.sourceFactory = sourceFactory;
-        this.sinkFactory = sinkFactory;
+        this.sharedSources = sharedSources;
+        this.sharedSinks = sharedSinks;
         this.logWriter = logWriter;
         this.mapper = mapper;
         this.props = props;
@@ -99,8 +99,8 @@ public class ProtocolRuntimeManager {
 
             ProtocolRuntime runtime = new ProtocolRuntime(
                     p.getId(), p.getName(), code, p.getSampleRate(),
-                    p.getRingBufferSize(), p.getWorkerThreads(),
-                    ds, target, engine, sourceFactory, sinkFactory, logWriter, mapper);
+                    p.getRingBufferSize(), p.getWorkerThreads(), p.getSourceTopics(),
+                    ds, target, engine, sharedSources, sharedSinks, logWriter, mapper);
 
             try {
                 runtime.start();

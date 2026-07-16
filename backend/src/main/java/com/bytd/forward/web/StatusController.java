@@ -3,6 +3,7 @@ package com.bytd.forward.web;
 import com.bytd.forward.log.AsyncLogWriter;
 import com.bytd.forward.runtime.ProtocolRuntimeManager;
 import com.bytd.forward.runtime.RuntimeStatus;
+import com.bytd.forward.service.SystemMetricsService;
 import com.bytd.forward.web.dto.OverviewDto;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,10 +19,14 @@ public class StatusController {
 
     private final ProtocolRuntimeManager manager;
     private final AsyncLogWriter logWriter;
+    private final SystemMetricsService systemMetrics;
 
-    public StatusController(ProtocolRuntimeManager manager, AsyncLogWriter logWriter) {
+    public StatusController(ProtocolRuntimeManager manager,
+                            AsyncLogWriter logWriter,
+                            SystemMetricsService systemMetrics) {
         this.manager = manager;
         this.logWriter = logWriter;
+        this.systemMetrics = systemMetrics;
     }
 
     @GetMapping
@@ -53,6 +58,7 @@ public class StatusController {
         }
         return new OverviewDto(running, in, out, scriptErr, timeout, sinkErr,
                 logWriter.getLogQueueSize(), logWriter.getRecordQueueSize(),
-                logWriter.getDroppedLogs(), logWriter.getDroppedRecords());
+                logWriter.getDroppedLogs(), logWriter.getDroppedRecords(),
+                systemMetrics.snapshot());
     }
 }

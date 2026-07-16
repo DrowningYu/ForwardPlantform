@@ -9,6 +9,7 @@ public record ProtocolDto(
         boolean enabled,
         boolean running,
         Long sourceId,
+        String sourceTopics,
         Long outputTargetId,
         Long currentVersionId,
         int ringBufferSize,

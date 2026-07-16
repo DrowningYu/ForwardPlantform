@@ -34,7 +34,9 @@
 
       <el-table-column label="数据源" min-width="160" show-overflow-tooltip>
 
-        <template #default="{ row }">{{ sourceName(row.sourceId) }}</template>
+        <template #default="{ row }">
+          {{ sourceName(row.sourceId) }}<span v-if="row.sourceTopics" class="topic-hint">[{{ row.sourceTopics }}]</span>
+        </template>
 
       </el-table-column>
 
@@ -122,6 +124,29 @@
 
         </el-form-item>
 
+        <el-form-item v-if="sourceTopicOptions.length > 0" label="订阅 Topic">
+
+          <el-select
+            v-model="selectedTopics"
+            multiple
+            clearable
+            placeholder="留空 = 接收该数据源全部数据"
+            class="full-width"
+          >
+            <el-option v-for="t in sourceTopicOptions" :key="t" :label="t" :value="t" />
+          </el-select>
+
+          <el-alert
+            v-if="selectedTopics.length === 0 && sourceTopicOptions.length > 1"
+            title="未选择 Topic，本协议将接收该数据源订阅的全部数据"
+            type="info"
+            show-icon
+            :closable="false"
+            class="binding-alert"
+          />
+
+        </el-form-item>
+
         <el-form-item label="输出目标">
 
           <el-select v-model="form.outputTargetId" placeholder="选择输出目标" class="full-width">
@@ -192,7 +217,7 @@
 
 <script setup lang="ts">
 
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { useRouter } from 'vue-router'
 
@@ -221,6 +246,21 @@ const form = reactive<any>({})
 const sourceWarnings = ref(new Map<number, BindingCheckResult>())
 
 const targetWarnings = ref(new Map<number, BindingCheckResult>())
+
+const selectedTopics = ref<string[]>([])
+
+/** 所选数据源 config.topics 拆分出的可选项；HTTP 源无 topics 不显示 */
+const sourceTopicOptions = computed(() => {
+  const src = sources.value.find((s) => s.id === form.sourceId)
+  if (!src || src.type === 'HTTP') return []
+  const topics: string = src.config?.topics || ''
+  return topics.split(/[|,]/).map((t: string) => t.trim()).filter(Boolean)
+})
+
+// 切换数据源时清掉不属于新源的已选 topic
+watch(() => form.sourceId, () => {
+  selectedTopics.value = selectedTopics.value.filter((t) => sourceTopicOptions.value.includes(t))
+})
 
 
 
@@ -390,6 +430,8 @@ function openCreate() {
 
   })
 
+  selectedTopics.value = []
+
   dialog.value = true
 
 }
@@ -399,6 +441,8 @@ function openCreate() {
 function edit(row: Protocol) {
 
   Object.assign(form, { ...row })
+
+  selectedTopics.value = (row.sourceTopics || '').split(/[|,]/).map((t) => t.trim()).filter(Boolean)
 
   dialog.value = true
 
@@ -415,6 +459,8 @@ function buildPayload() {
     description: form.description,
 
     sourceId: form.sourceId,
+
+    sourceTopics: selectedTopics.value.join('|') || null,
 
     outputTargetId: form.outputTargetId,
 
@@ -642,6 +688,16 @@ onMounted(load)
   line-height: 1.5;
 
   font-size: 12px;
+
+}
+
+.topic-hint {
+
+  color: var(--el-text-color-secondary);
+
+  font-size: 12px;
+
+  margin-left: 4px;
 
 }
 

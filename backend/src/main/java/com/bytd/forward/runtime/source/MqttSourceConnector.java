@@ -2,7 +2,7 @@ package com.bytd.forward.runtime.source;
 
 import com.bytd.forward.runtime.source.config.MqttSourceConfig;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
-import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
@@ -58,7 +58,27 @@ public class MqttSourceConnector implements SourceConnector {
             }
         }
 
-        client.setCallback(new MqttCallback() {
+        String[] topics = splitTopics(config.topics);
+        int[] qos = new int[topics.length];
+        int q = config.qos == null ? 1 : config.qos;
+        for (int i = 0; i < topics.length; i++) {
+            qos[i] = q;
+        }
+
+        client.setCallback(new MqttCallbackExtended() {
+            @Override
+            public void connectComplete(boolean reconnect, String serverURI) {
+                // cleanSession=true 时重连后 Broker 无会话，必须重新订阅，否则断线后不再收数据
+                if (reconnect) {
+                    try {
+                        client.subscribe(topics, qos);
+                        log.info("MQTT 源重连成功并重新订阅 {} topics={}", serverURI, String.join(",", topics));
+                    } catch (Exception e) {
+                        log.error("MQTT 源重连后重新订阅失败: {}", e.getMessage());
+                    }
+                }
+            }
+
             @Override
             public void connectionLost(Throwable cause) {
                 log.warn("MQTT 连接断开: {}", cause == null ? "unknown" : cause.getMessage());
@@ -82,13 +102,6 @@ public class MqttSourceConnector implements SourceConnector {
         });
 
         client.connect(options);
-
-        String[] topics = splitTopics(config.topics);
-        int[] qos = new int[topics.length];
-        int q = config.qos == null ? 1 : config.qos;
-        for (int i = 0; i < topics.length; i++) {
-            qos[i] = q;
-        }
         client.subscribe(topics, qos);
         running = true;
         log.info("MQTT 源已连接 {} 订阅 {}", primary, String.join(",", topics));

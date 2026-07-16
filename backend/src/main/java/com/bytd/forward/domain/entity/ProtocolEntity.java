@@ -44,6 +44,10 @@ public class ProtocolEntity {
     @Column(name = "source_id")
     private Long sourceId;
 
+    /** 协议订阅的数据源 topic 过滤，| 分隔；NULL/空 = 接收该数据源全部 topic。 */
+    @Column(name = "source_topics")
+    private String sourceTopics;
+
     @Column(name = "output_target_id")
     private Long outputTargetId;
 

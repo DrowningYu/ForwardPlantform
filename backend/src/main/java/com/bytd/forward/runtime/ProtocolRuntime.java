@@ -9,11 +9,11 @@ import com.bytd.forward.engine.api.ScriptLog;
 import com.bytd.forward.engine.api.StateStore;
 import com.bytd.forward.log.AsyncLogWriter;
 import com.bytd.forward.log.ProtocolScriptLog;
-import com.bytd.forward.runtime.sink.Sink;
-import com.bytd.forward.runtime.sink.SinkFactory;
+import com.bytd.forward.runtime.shared.SharedSinkManager;
+import com.bytd.forward.runtime.shared.SharedSourceManager;
+import com.bytd.forward.runtime.shared.SourceSubscription;
+import com.bytd.forward.runtime.shared.TopicMatcher;
 import com.bytd.forward.runtime.sink.SinkRouter;
-import com.bytd.forward.runtime.source.SourceConnector;
-import com.bytd.forward.runtime.source.SourceConnectorFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.RingBuffer;
@@ -22,12 +22,15 @@ import com.lmax.disruptor.dsl.ProducerType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 一个运行中的转发协议：数据源 -> Disruptor 环形缓冲(背压) -> Worker 池(脚本) -> 输出。
+ * 一个运行中的转发协议：共享数据源(按 topic 过滤) -> Disruptor 环形缓冲(背压)
+ * -> Worker 池(脚本) -> 共享输出。
+ * 连接由 SharedSourceManager / SharedSinkManager 平台级复用，协议只持有订阅与租约。
  */
 public class ProtocolRuntime {
 
@@ -39,13 +42,14 @@ public class ProtocolRuntime {
     private final double sampleRate;
     private final int ringBufferSize;
     private final int workerThreads;
+    private final List<String> topicFilters;
 
     private final DataSourceEntity dataSource;
     private final OutputTargetEntity outputTarget;
 
     private final ScriptEngineService engine;
-    private final SourceConnectorFactory sourceFactory;
-    private final SinkFactory sinkFactory;
+    private final SharedSourceManager sharedSources;
+    private final SharedSinkManager sharedSinks;
     private final AsyncLogWriter logWriter;
     private final ObjectMapper mapper;
 
@@ -59,25 +63,26 @@ public class ProtocolRuntime {
     private SinkRouter router;
     private Disruptor<MessageEvent> disruptor;
     private RingBuffer<MessageEvent> ringBuffer;
-    private SourceConnector connector;
+    private SourceSubscription subscription;
     private ScriptLog scriptLog;
 
     public ProtocolRuntime(long protocolId, String name, String code, double sampleRate,
-                           int ringBufferSize, int workerThreads,
+                           int ringBufferSize, int workerThreads, String sourceTopics,
                            DataSourceEntity dataSource, OutputTargetEntity outputTarget,
-                           ScriptEngineService engine, SourceConnectorFactory sourceFactory,
-                           SinkFactory sinkFactory, AsyncLogWriter logWriter, ObjectMapper mapper) {
+                           ScriptEngineService engine, SharedSourceManager sharedSources,
+                           SharedSinkManager sharedSinks, AsyncLogWriter logWriter, ObjectMapper mapper) {
         this.protocolId = protocolId;
         this.name = name;
         this.code = code;
         this.sampleRate = sampleRate;
         this.ringBufferSize = nextPowerOfTwo(Math.max(2, ringBufferSize));
         this.workerThreads = Math.max(1, workerThreads);
+        this.topicFilters = TopicMatcher.splitFilters(sourceTopics);
         this.dataSource = dataSource;
         this.outputTarget = outputTarget;
         this.engine = engine;
-        this.sourceFactory = sourceFactory;
-        this.sinkFactory = sinkFactory;
+        this.sharedSources = sharedSources;
+        this.sharedSinks = sharedSinks;
         this.logWriter = logWriter;
         this.mapper = mapper;
     }
@@ -96,9 +101,9 @@ public class ProtocolRuntime {
             }
             compiled = cr.getCompiled();
 
-            // 2. 打开输出
-            Sink sink = sinkFactory.create(outputTarget);
-            router = new SinkRouter(sink, mapper);
+            // 2. 租借共享输出
+            SharedSinkManager.SinkLease lease = sharedSinks.acquire(outputTarget);
+            router = new SinkRouter(lease, mapper);
             router.open();
 
             // 3. 日志通道
@@ -132,12 +137,12 @@ public class ProtocolRuntime {
             });
             ringBuffer = disruptor.start();
 
-            // 5. 启动数据源，消息发布到环形缓冲（满时阻塞 = 背压）
-            connector = sourceFactory.create(dataSource, "proto-" + protocolId + "-source");
-            connector.start(message -> ringBuffer.publishEvent((event, seq, m) -> event.setMessage(m), message));
+            // 5. 订阅共享数据源，消息发布到环形缓冲（满时阻塞 = 背压）
+            subscription = sharedSources.subscribe(dataSource, protocolId, topicFilters,
+                    message -> ringBuffer.publishEvent((event, seq, m) -> event.setMessage(m), message));
 
             status = "RUNNING";
-            logWriter.log(protocolId, "INFO", "协议已启动: 源=" + connector.describe() + " 出=" + router.describe());
+            logWriter.log(protocolId, "INFO", "协议已启动: 源=" + subscription.describe() + " 出=" + router.describe());
             log.info("协议[{}] {} 已启动", protocolId, name);
         } catch (Exception e) {
             status = "ERROR";
@@ -150,8 +155,9 @@ public class ProtocolRuntime {
 
     public synchronized void stop() {
         try {
-            if (connector != null) {
-                connector.stop();
+            if (subscription != null) {
+                subscription.close();
+                subscription = null;
             }
             if (disruptor != null) {
                 try {
@@ -172,6 +178,10 @@ public class ProtocolRuntime {
     }
 
     private void safeCleanup() {
+        if (subscription != null) {
+            subscription.close();
+            subscription = null;
+        }
         if (router != null) {
             router.close();
             router = null;
@@ -182,10 +192,10 @@ public class ProtocolRuntime {
         }
         disruptor = null;
         ringBuffer = null;
-        connector = null;
     }
 
     public RuntimeStatus snapshot() {
+        SourceSubscription sub = subscription;
         return new RuntimeStatus(
                 protocolId,
                 name,
@@ -193,7 +203,7 @@ public class ProtocolRuntime {
                 statusMessage,
                 dataSource.getName(),
                 dataSource.getConfig(),
-                connector == null ? "-" : connector.describe(),
+                sub == null ? "-" : sub.describe(),
                 outputTarget.getName(),
                 outputTarget.getConfig(),
                 router == null ? "-" : router.describe(),
