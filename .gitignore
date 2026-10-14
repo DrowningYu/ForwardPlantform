@@ -11,5 +11,7 @@ frontend/dist/
 *.iml
 .vscode/
 
-# 日志与本地文件
+# 日志与本地运行文件（含从服务器拷回的 backend.log）
+logs/
 *.log
+*.pid

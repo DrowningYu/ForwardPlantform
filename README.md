@@ -80,7 +80,26 @@ Flyway 会在指定 schema 下自动建表（不存在则创建）；应用启�
 cd frontend
 npm install
 npm run dev
-# 打开 http://localhost:5173 （已代理 /api 到 8080）
+# 打开 http://localhost:30011 （已代理 /api 到 30010）
+
+## 服务器启动后端
+
+在部署目录（与 `forward.env`、`backend/forward-platform.jar` 同级）执行：
+
+```bash
+chmod +x start-backend.sh stop-backend.sh
+./start-backend.sh          # 自动 source forward.env 后启动
+./stop-backend.sh           # 按 logs/backend.pid 停止
+tail -f logs/backend.log
+```
+
+手动启动时也必须先加载环境变量，否则会连默认的 localhost:5432：
+
+```bash
+set -a && source ./forward.env && set +a
+nohup java $JAVA_OPTS -jar backend/forward-platform.jar > logs/backend.log 2>&1 &
+echo $! > logs/backend.pid
+```
 ```
 
 ### 4. 使用流程
