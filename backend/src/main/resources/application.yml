@@ -16,6 +16,11 @@ spring:
       minimum-idle: 4
       connection-timeout: 30000
       pool-name: forward-hikari
+      data-source-properties:
+        connectTimeout: ${FP_DB_CONNECT_TIMEOUT:10}
+        socketTimeout: ${FP_DB_SOCKET_TIMEOUT:60}
+        cancelSignalTimeout: ${FP_DB_CANCEL_TIMEOUT:5}
+        tcpKeepAlive: true
   jpa:
     hibernate:
       ddl-auto: none
@@ -50,6 +55,7 @@ forward:
     queue-capacity: 100000
     batch-size: 500
     flush-interval-ms: 1000
+    recovery-interval-ms: 30000
   # 分区维护
   partition:
     # 每天预建未来多少天的分区
@@ -68,3 +74,13 @@ forward:
     default-worker-threads: 4
     # 调试抓取实时样本的最大条数
     debug-capture-max: 20
+
+logging:
+  file:
+    name: ${FP_LOG_FILE:logs/backend.log}
+  logback:
+    rollingpolicy:
+      max-file-size: 50MB
+      max-history: 7
+      total-size-cap: 500MB
+      clean-history-on-start: true

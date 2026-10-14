@@ -59,6 +59,7 @@ public class StatusController {
         return new OverviewDto(running, in, out, scriptErr, timeout, sinkErr,
                 logWriter.getLogQueueSize(), logWriter.getRecordQueueSize(),
                 logWriter.getDroppedLogs(), logWriter.getDroppedRecords(),
-                systemMetrics.snapshot());
+                systemMetrics.snapshot(), logWriter.getWriteStatus(), logWriter.getLastSuccess(),
+                logWriter.getFailures(), logWriter.getLastFailure());
     }
 }

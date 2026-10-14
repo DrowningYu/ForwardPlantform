@@ -17,6 +17,16 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class)
+    public ResponseEntity<Map<String, Object>> handleStaleVersion(Exception e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "版本已被其他操作修改，请重新载入"));
+    }
+
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConstraint(Exception e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "数据已被修改、名称重复或关联对象不存在，请刷新后重试"));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException e) {
         return ResponseEntity.badRequest().body(Map.of("error", e.getMessage() == null ? "参数错误" : e.getMessage()));

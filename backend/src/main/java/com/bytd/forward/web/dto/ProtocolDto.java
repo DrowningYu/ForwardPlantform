@@ -15,6 +15,8 @@ public record ProtocolDto(
         int ringBufferSize,
         int workerThreads,
         int logRetentionDays,
-        double sampleRate
+        double sampleRate,
+        Long groupId,
+        int sortOrder
 ) {
 }

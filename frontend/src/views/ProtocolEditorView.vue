@@ -4,8 +4,11 @@
       <span class="title">协议 #{{ protocolId }} · {{ protocol?.name }}</span>
       <el-tag v-if="protocol" :type="protocol.running ? 'success' : 'info'">{{ protocol.status }}</el-tag>
       <div class="spacer" />
-      <el-input v-model="remark" placeholder="版本备注(可选)" style="width: 220px" size="small" />
-      <el-button type="primary" size="small" :loading="saving" @click="save">保存为新版本</el-button>
+      <el-tag v-if="loadedVersion" type="info">正在编辑 v{{ loadedVersion.version }} · 修订 {{ loadedVersion.revision }}</el-tag>
+      <el-tag v-if="dirty" type="warning">未保存</el-tag>
+      <el-input v-model="remark" :disabled="saving" maxlength="512" placeholder="版本备注(可选)" style="width: 220px" size="small" />
+      <el-button size="small" :disabled="!loadedVersion || !dirty || saving" @click="revise">保存修订</el-button>
+      <el-button type="primary" size="small" :loading="saving" @click="save">保存为新版本并启用</el-button>
       <el-button size="small" @click="$router.push('/protocols')">返回</el-button>
     </div>
 
@@ -17,7 +20,7 @@
             v-model:value="code"
             language="java"
             theme="vs-dark"
-            :options="{ fontSize: 13, minimap: { enabled: false }, automaticLayout: true, scrollBeyondLastLine: false }"
+            :options="{ fontSize: 13, minimap: { enabled: false }, automaticLayout: true, scrollBeyondLastLine: false, readOnly: saving }"
           />
         </div>
       </el-col>
@@ -60,7 +63,7 @@
       </el-col>
     </el-row>
 
-    <el-collapse class="bottom">
+    <el-collapse v-model="expandedSections" class="bottom">
       <el-collapse-item title="平台提供的变量与函数（点击展开）" name="help">
         <pre class="help">msg / payload   收到的原始报文(字符串)
 ctx             元数据: ctx.topic / ctx.source / ctx.receivedAt / ctx.partition / ctx.offset
@@ -72,8 +75,16 @@ output(data)          将 data 发送到协议配置的输出目标(平台自动
 output('key', data)   发送到指定目标(多目标场景)</pre>
       </el-collapse-item>
       <el-collapse-item :title="`历史版本 (${versions.length})`" name="versions">
-        <el-table :data="versions" size="small" border>
+        <el-table :data="versions" size="small" border :row-class-name="versionRowClass">
           <el-table-column prop="version" label="版本" width="80" />
+          <el-table-column label="使用状态" width="240">
+            <template #default="{ row }">
+              <el-tag v-if="row.current" size="small">当前配置</el-tag>
+              <el-tag v-if="row.running" size="small" type="success">正在运行</el-tag>
+              <el-tag v-if="loadedVersion?.id === row.id" size="small" type="info">编辑中</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="revision" label="修订" width="65" />
           <el-table-column prop="compileStatus" label="编译" width="90">
             <template #default="{ row }">
               <el-tag size="small" :type="row.compileStatus === 'OK' ? 'success' : 'danger'">{{ row.compileStatus }}</el-tag>
@@ -81,10 +92,14 @@ output('key', data)   发送到指定目标(多目标场景)</pre>
           </el-table-column>
           <el-table-column prop="remark" label="备注" />
           <el-table-column prop="createdAt" label="创建时间" width="200" />
-          <el-table-column label="操作" width="180">
+          <el-table-column prop="updatedAt" label="修订时间" width="200" />
+          <el-table-column label="操作" width="280" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" @click="loadVersion(row.id)">载入</el-button>
-              <el-button size="small" type="primary" @click="activate(row.id)">设为当前</el-button>
+              <el-button size="small" :disabled="saving" @click="loadVersion(row.id)">载入/修订</el-button>
+              <el-button size="small" type="primary" :disabled="row.current || row.compileStatus !== 'OK' || saving" @click="activate(row.id)">设为当前</el-button>
+              <el-tooltip :disabled="!row.current && !row.running" content="请先切换到其他有效版本再删除">
+                <span><el-button size="small" type="danger" :disabled="row.current || row.running || saving" @click="removeVersion(row)">删除</el-button></span>
+              </el-tooltip>
             </template>
           </el-table-column>
         </el-table>
@@ -94,11 +109,11 @@ output('key', data)   发送到指定目标(多目标场景)</pre>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import { ElMessage } from 'element-plus'
-import { api, Protocol } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { api, Protocol, type ScriptVersion } from '../api'
 
 const route = useRoute()
 const protocolId = Number(route.params.id)
@@ -106,7 +121,13 @@ const protocolId = Number(route.params.id)
 const protocol = ref<Protocol | null>(null)
 const code = ref('')
 const remark = ref('')
-const versions = ref<any[]>([])
+const versions = ref<ScriptVersion[]>([])
+const loadedVersion = ref<ScriptVersion | null>(null)
+const expandedSections = ref(['versions'])
+const savedCode = ref('')
+const savedRemark = ref('')
+const dirty = computed(() => code.value !== savedCode.value || remark.value !== savedRemark.value)
+const versionRowClass = ({ row }: { row: ScriptVersion }) => row.current ? 'current-version' : ''
 
 const sampleInput = ref('')
 const multiMode = ref(false)
@@ -118,23 +139,62 @@ const running = ref(false)
 const capturing = ref(false)
 
 async function loadAll() {
-  protocol.value = await api.getProtocol(protocolId)
+  await refreshVersions()
   const cur = await api.currentScript(protocolId)
-  if (cur) code.value = cur.code || ''
-  versions.value = await api.listVersions(protocolId)
+  if (cur) selectVersion(cur)
+}
+
+async function refreshVersions() {
+  const [p, v] = await Promise.all([api.getProtocol(protocolId), api.listVersions(protocolId)])
+  protocol.value = p
+  versions.value = v
+}
+
+function selectVersion(v: ScriptVersion) {
+  loadedVersion.value = v
+  code.value = savedCode.value = v.code || ''
+  remark.value = savedRemark.value = v.remark || ''
+}
+
+async function confirm(message: string) {
+  try { await ElMessageBox.confirm(message, '确认操作', { type: 'warning' }); return true }
+  catch { return false }
+}
+
+async function discardChanges() {
+  return !dirty.value || await confirm('当前代码或备注尚未保存，是否放弃修改？')
+}
+
+async function confirmReload() {
+  return !protocol.value?.running || await confirm('此操作将重载正在运行的协议，短暂中断该协议转发并清空其内存 state。是否继续？')
 }
 
 async function save() {
+  if (!await confirmReload()) return
   saving.value = true
   try {
-    await api.saveScript(protocolId, { code: code.value, remark: remark.value })
-    ElMessage.success('已保存为新版本')
-    remark.value = ''
-    versions.value = await api.listVersions(protocolId)
-    protocol.value = await api.getProtocol(protocolId)
+    const v = await api.saveScript(protocolId, { code: code.value, remark: remark.value })
+    selectVersion(v)
+    compileError.value = v.compileError || ''
+    if (v.compileStatus === 'OK') ElMessage.success('已保存并设为当前版本')
+    else ElMessage.warning('已保存失败版本，编译未通过，当前使用版本保持不变')
   } finally {
     saving.value = false
+    await refreshVersions()
   }
+}
+
+async function revise() {
+  const v = loadedVersion.value
+  if (!v) return
+  if (protocol.value?.currentVersionId === v.id && code.value !== savedCode.value && !await confirmReload()) return
+  saving.value = true
+  try {
+    const updated = await api.reviseScript(protocolId, v.id, { code: code.value, remark: remark.value, revision: v.revision })
+    selectVersion(updated)
+    compileError.value = updated.compileError || ''
+    ElMessage.success('版本修订已保存')
+  } finally { saving.value = false; await refreshVersions() }
 }
 
 function buildInputs(): string[] {
@@ -186,16 +246,46 @@ async function capture() {
 }
 
 async function loadVersion(vid: number) {
-  const v = await api.getVersion(protocolId, vid)
-  code.value = v.code || ''
-  ElMessage.success('已载入该版本代码到编辑器')
+  if (!await discardChanges()) return
+  saving.value = true
+  try {
+    const v = await api.getVersion(protocolId, vid)
+    selectVersion(v)
+    compileError.value = v.compileError || ''
+    ElMessage.success('已载入该版本代码到编辑器')
+  } finally { saving.value = false }
 }
 
 async function activate(vid: number) {
-  await api.activateVersion(protocolId, vid)
-  ElMessage.success('已设为当前版本')
-  versions.value = await api.listVersions(protocolId)
+  if (!await discardChanges() || !await confirmReload()) return
+  saving.value = true
+  try {
+    selectVersion(await api.activateVersion(protocolId, vid))
+    ElMessage.success('已设为当前版本')
+  } finally { saving.value = false; await refreshVersions() }
 }
+
+async function removeVersion(v: ScriptVersion) {
+  if (loadedVersion.value?.id === v.id && !await discardChanges()) return
+  if (!await confirm(`确认永久删除历史版本 v${v.version}？`)) return
+  saving.value = true
+  try {
+    await api.deleteScript(protocolId, v.id)
+    if (loadedVersion.value?.id === v.id) {
+      const current = await api.currentScript(protocolId)
+      if (current) selectVersion(current)
+      else { loadedVersion.value = null; code.value = savedCode.value = ''; remark.value = savedRemark.value = '' }
+    }
+    ElMessage.success('历史版本已删除')
+  } finally { saving.value = false; await refreshVersions() }
+}
+
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (dirty.value) { event.preventDefault(); event.returnValue = '' }
+}
+onBeforeRouteLeave(() => saving.value ? false : discardChanges())
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 
 onMounted(loadAll)
 </script>
@@ -203,6 +293,8 @@ onMounted(loadAll)
 <style scoped>
 .editor-page { display: flex; flex-direction: column; height: calc(100vh - 120px); }
 .toolbar { display: flex; align-items: center; gap: 10px; background: #fff; padding: 10px 12px; border-radius: 4px; }
+.toolbar { flex-wrap: wrap; }
+:deep(.current-version) { --el-table-tr-bg-color: #ecf5ff; }
 .toolbar .title { font-weight: 600; }
 .spacer { flex: 1; }
 .body { flex: 1; margin-top: 12px; min-height: 0; }

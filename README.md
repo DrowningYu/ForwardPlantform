@@ -81,6 +81,7 @@ cd frontend
 npm install
 npm run dev
 # 打开 http://localhost:30011 （已代理 /api 到 30010）
+```
 
 ## 服务器启动后端
 
@@ -97,9 +98,8 @@ tail -f logs/backend.log
 
 ```bash
 set -a && source ./forward.env && set +a
-nohup java $JAVA_OPTS -jar backend/forward-platform.jar > logs/backend.log 2>&1 &
+nohup java $JAVA_OPTS -jar backend/forward-platform.jar > logs/console.log 2>&1 &
 echo $! > logs/backend.pid
-```
 ```
 
 ### 4. 使用流程
@@ -132,3 +132,12 @@ forward:
 
 Prometheus 指标: `GET /actuator/prometheus`，每协议指标带 `protocolId` 标签
 (`forward.protocol.in/out/script_error/timeout/sink_error/buffer_remaining/avg_cost_ms`)。
+
+## 稳定性与管理改进（待独立环境验收）
+
+- JDBC 默认建连超时 10 秒、读取超时 60 秒、取消超时 5 秒，开启 TCP keepalive；可用 `FP_DB_CONNECT_TIMEOUT`、`FP_DB_SOCKET_TIMEOUT`、`FP_DB_CANCEL_TIMEOUT` 调整。
+- 日志失败后降级，丢弃积压及后续日志，每 30 秒尝试恢复连接和分区。已运行协议继续转发；进程重启仍依赖数据库。
+- 应用日志由 Logback 写入并滚动管理 `logs/backend.log`（50MB/文件、7 天、500MB 归档上限）；启动脚本的控制台输出改为 `logs/console.log`，不要让 shell 与 Logback 同写 backend.log。
+- 历史脚本支持原版本修订、删除及当前/运行/编辑状态标识。当前版本须先切换再删除；当前代码修订会重载协议并清空该协议 state，仅备注修订不会。
+- 协议支持单层分组，分组与协议排序码默认 0，按排序码、ID 升序。删除分组归入未分组；修改分类、排序和描述信息不重启协议。
+- 验收流程、迁移说明和反馈模板见 [独立环境验收文档](docs/本次改进独立环境验收.md)。本机不执行构建、测试或启动；正式部署另行安排。

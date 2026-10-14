@@ -7,6 +7,12 @@
       <div class="card-head">
 
         <span>转发协议</span>
+        <el-select v-model="groupFilter" style="width: 200px" aria-label="分组筛选">
+          <el-option label="全部协议" value="all" />
+          <el-option label="未分组" value="none" />
+          <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+        </el-select>
+        <el-button @click="groupsDialog = true">管理分组</el-button>
 
         <el-button type="primary" @click="openCreate">新建协议</el-button>
 
@@ -16,11 +22,16 @@
 
 
 
-    <el-table :data="list" size="small" border>
+    <ProtocolGroupsDialog v-model="groupsDialog" @changed="load" />
+    <el-table :data="filteredList" size="small" border>
 
       <el-table-column prop="id" label="ID" width="70" />
 
       <el-table-column prop="name" label="名称" width="180" show-overflow-tooltip />
+      <el-table-column label="分组" width="140" show-overflow-tooltip>
+        <template #default="{ row }">{{ groupName(row.groupId) }}</template>
+      </el-table-column>
+      <el-table-column prop="sortOrder" label="排序码" width="85" />
 
       <el-table-column label="状态" width="100">
 
@@ -85,6 +96,12 @@
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
 
         <el-form-item label="描述"><el-input v-model="form.description" /></el-form-item>
+        <el-form-item label="分组">
+          <el-select v-model="form.groupId" clearable placeholder="未分组" class="full-width">
+            <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="排序码"><el-input-number v-model="form.sortOrder" :precision="0" :min="-2147483648" :max="2147483647" /></el-form-item>
 
         <el-form-item label="数据源">
 
@@ -223,7 +240,8 @@ import { useRouter } from 'vue-router'
 
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-import { api, BindingCheckResult, ConfigCarrier, Protocol } from '../api'
+import { api, BindingCheckResult, ConfigCarrier, Protocol, type ProtocolGroup } from '../api'
+import ProtocolGroupsDialog from '../components/ProtocolGroupsDialog.vue'
 
 import BindingWarningIcon from '../components/BindingWarningIcon.vue'
 
@@ -234,6 +252,12 @@ import { formatBindingMessages } from '../utils/bindingWarnings'
 const router = useRouter()
 
 const list = ref<Protocol[]>([])
+const groups = ref<ProtocolGroup[]>([])
+const groupsDialog = ref(false)
+const groupFilter = ref<number | 'all' | 'none'>('all')
+const filteredList = computed(() => list.value.filter(p => groupFilter.value === 'all'
+  || (groupFilter.value === 'none' ? p.groupId == null : p.groupId === groupFilter.value)))
+const groupName = (id?: number | null) => groups.value.find(g => g.id === id)?.name || '未分组'
 
 const sources = ref<ConfigCarrier[]>([])
 
@@ -265,6 +289,8 @@ watch(() => form.sourceId, () => {
 
 
 async function load() {
+  groups.value = await api.listGroups()
+  if (typeof groupFilter.value === 'number' && !groups.value.some(g => g.id === groupFilter.value)) groupFilter.value = 'all'
 
   list.value = await api.listProtocols()
 
@@ -425,6 +451,7 @@ function openCreate() {
   Object.assign(form, {
 
     id: null, name: '', description: '', sourceId: undefined, outputTargetId: undefined,
+    groupId: typeof groupFilter.value === 'number' ? groupFilter.value : null, sortOrder: 0,
 
     ringBufferSize: 16384, workerThreads: 4, logRetentionDays: 7, sampleRate: 1.0
 
@@ -457,6 +484,8 @@ function buildPayload() {
     name: form.name,
 
     description: form.description,
+    groupId: form.groupId || null,
+    sortOrder: form.sortOrder ?? 0,
 
     sourceId: form.sourceId,
 

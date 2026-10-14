@@ -43,7 +43,8 @@ export SERVER_PORT="${SERVER_PORT:-30010}"
 echo "使用数据库: ${FP_DB_HOST:-localhost}:${FP_DB_PORT:-5432}/${FP_DB_NAME:-forward_platform}"
 echo "服务端口: ${SERVER_PORT}"
 
-nohup java ${JAVA_OPTS:-} -jar "$JAR" > "${LOG_DIR}/backend.log" 2>&1 &
+# Logback 滚动写 backend.log；控制台仅保留本次启动诊断，避免重复写同一文件。
+nohup java ${JAVA_OPTS:-} -jar "$JAR" > "${LOG_DIR}/console.log" 2>&1 &
 echo $! > "$PID_FILE"
 echo "后端已启动，PID=$(cat "$PID_FILE")"
 echo "日志: ${LOG_DIR}/backend.log"

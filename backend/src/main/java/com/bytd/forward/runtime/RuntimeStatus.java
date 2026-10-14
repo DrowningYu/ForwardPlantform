@@ -25,6 +25,9 @@ public record RuntimeStatus(
         long bufferRemaining,
         String lastError,
         /** 最近一次成功转发时间（epoch ms），null 表示运行以来尚未转发 */
-        Long lastForwardAtMs
+        Long lastForwardAtMs,
+        int sortOrder,
+        Long scriptVersionId,
+        long scriptRevision
 ) {
 }

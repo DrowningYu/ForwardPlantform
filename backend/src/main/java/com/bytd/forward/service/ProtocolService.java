@@ -4,6 +4,7 @@ import com.bytd.forward.config.ForwardProperties;
 import com.bytd.forward.domain.entity.ProtocolEntity;
 import com.bytd.forward.domain.entity.ScriptVersionEntity;
 import com.bytd.forward.domain.repository.ProtocolRepository;
+import com.bytd.forward.domain.repository.ProtocolGroupRepository;
 import com.bytd.forward.domain.repository.ScriptVersionRepository;
 import com.bytd.forward.engine.CompileResult;
 import com.bytd.forward.engine.ScriptEngineService;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class ProtocolService {
@@ -43,23 +45,28 @@ public class ProtocolService {
     private final ScriptEngineService engine;
     private final ForwardProperties props;
     private final ProtocolBindingWarningService bindingWarningService;
+    private final ProtocolGroupRepository groups;
+    private final ProtocolMutationExecutor mutations;
 
     public ProtocolService(ProtocolRepository protocolRepository,
                            ScriptVersionRepository versionRepository,
                            ProtocolRuntimeManager runtimeManager,
                            ScriptEngineService engine,
                            ForwardProperties props,
-                           ProtocolBindingWarningService bindingWarningService) {
+                           ProtocolBindingWarningService bindingWarningService,
+                           ProtocolGroupRepository groups, ProtocolMutationExecutor mutations) {
         this.protocolRepository = protocolRepository;
         this.versionRepository = versionRepository;
         this.runtimeManager = runtimeManager;
         this.engine = engine;
         this.props = props;
         this.bindingWarningService = bindingWarningService;
+        this.groups = groups;
+        this.mutations = mutations;
     }
 
     public List<ProtocolDto> list() {
-        return protocolRepository.findAllByOrderByIdAsc().stream().map(this::toDto).toList();
+        return protocolRepository.findAllByOrderBySortOrderAscIdAsc().stream().map(this::toDto).toList();
     }
 
     public ProtocolDto get(Long id) {
@@ -71,6 +78,9 @@ public class ProtocolService {
         ProtocolEntity p = new ProtocolEntity();
         p.setName(req.name);
         p.setDescription(req.description);
+        validateGroup(req.getGroupId());
+        p.setGroupId(req.getGroupId());
+        p.setSortOrder(req.sortOrder == null ? 0 : req.sortOrder);
         p.setSourceId(req.sourceId);
         p.setSourceTopics(normalizeTopics(req.sourceTopics));
         p.setOutputTargetId(req.outputTargetId);
@@ -99,28 +109,39 @@ public class ProtocolService {
         return toDto(p);
     }
 
-    @Transactional
     public ProtocolDto update(Long id, ProtocolRequest req) {
-        ProtocolEntity p = find(id);
-        if (req.name != null) p.setName(req.name);
-        p.setDescription(req.description);
-        if (req.sourceId != null) p.setSourceId(req.sourceId);
-        p.setSourceTopics(normalizeTopics(req.sourceTopics));
-        if (req.outputTargetId != null) p.setOutputTargetId(req.outputTargetId);
-        if (req.ringBufferSize != null) p.setRingBufferSize(req.ringBufferSize);
-        if (req.workerThreads != null) p.setWorkerThreads(req.workerThreads);
-        if (req.logRetentionDays != null) p.setLogRetentionDays(req.logRetentionDays);
-        if (req.sampleRate != null) p.setSampleRate(req.sampleRate);
-        p = protocolRepository.save(p);
-        if (runtimeManager.isRunning(id)) {
-            try {
-                restart(id, true);
-            } catch (ProtocolBindingBlockedException e) {
-                runtimeManager.stop(id);
-                throw e;
+        mutations.execute(id, () -> {
+            ProtocolEntity p = protocolRepository.findLockedById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("协议不存在: " + id));
+            boolean reload = runtimeSettingsChanged(p, req);
+            if (req.name != null) p.setName(req.name);
+            p.setDescription(req.description);
+            if (req.sourceId != null) p.setSourceId(req.sourceId);
+            if (req.hasSourceTopics()) p.setSourceTopics(normalizeTopics(req.sourceTopics));
+            if (req.outputTargetId != null) p.setOutputTargetId(req.outputTargetId);
+            if (req.ringBufferSize != null) p.setRingBufferSize(req.ringBufferSize);
+            if (req.workerThreads != null) p.setWorkerThreads(req.workerThreads);
+            if (req.logRetentionDays != null) p.setLogRetentionDays(req.logRetentionDays);
+            if (req.sampleRate != null) p.setSampleRate(req.sampleRate);
+            if (req.hasGroupId()) {
+                validateGroup(req.getGroupId());
+                p.setGroupId(req.getGroupId());
             }
-        }
-        return toDto(p);
+            if (req.sortOrder != null) p.setSortOrder(req.sortOrder);
+            p = protocolRepository.save(p);
+            return new UpdateResult(p, reload);
+        }, result -> {
+            runtimeManager.updateDisplay(id, result.protocol().getName(), result.protocol().getSortOrder());
+            if (result.reload() && runtimeManager.isRunning(id)) {
+                try {
+                    restart(id, true);
+                } catch (ProtocolBindingBlockedException e) {
+                    runtimeManager.stop(id);
+                    throw e;
+                }
+            }
+        });
+        return get(id);
     }
 
     @Transactional
@@ -159,7 +180,23 @@ public class ProtocolService {
                 p.getId(), p.getName(), p.getDescription(), p.getStatus(), p.getStatusMessage(),
                 p.isEnabled(), runtimeManager.isRunning(p.getId()),
                 p.getSourceId(), p.getSourceTopics(), p.getOutputTargetId(), p.getCurrentVersionId(),
-                p.getRingBufferSize(), p.getWorkerThreads(), p.getLogRetentionDays(), p.getSampleRate());
+                p.getRingBufferSize(), p.getWorkerThreads(), p.getLogRetentionDays(), p.getSampleRate(),
+                p.getGroupId(), p.getSortOrder());
+    }
+
+    private record UpdateResult(ProtocolEntity protocol, boolean reload) {}
+
+    private void validateGroup(Long id) {
+        if (id != null && !groups.existsById(id)) throw new IllegalArgumentException("分组不存在: " + id);
+    }
+
+    static boolean runtimeSettingsChanged(ProtocolEntity p, ProtocolRequest r) {
+        return (r.sourceId != null && !Objects.equals(r.sourceId, p.getSourceId()))
+                || (r.hasSourceTopics() && !Objects.equals(normalizeTopics(r.sourceTopics), p.getSourceTopics()))
+                || (r.outputTargetId != null && !Objects.equals(r.outputTargetId, p.getOutputTargetId()))
+                || (r.ringBufferSize != null && r.ringBufferSize != p.getRingBufferSize())
+                || (r.workerThreads != null && r.workerThreads != p.getWorkerThreads())
+                || (r.sampleRate != null && Double.compare(r.sampleRate, p.getSampleRate()) != 0);
     }
 
     /** 空白串统一存为 NULL（= 接收全部 topic）。 */

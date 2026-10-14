@@ -4,5 +4,6 @@ import java.time.Instant;
 
 public record ScriptVersionDto(Long id, Long protocolId, int version, String language,
                                String compileStatus, String compileError, String remark,
-                               String code, Instant createdAt) {
+                               String code, Instant createdAt, Instant updatedAt,
+                               long revision, boolean current, boolean running) {
 }

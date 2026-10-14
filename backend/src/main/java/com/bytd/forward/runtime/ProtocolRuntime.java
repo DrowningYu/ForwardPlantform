@@ -37,7 +37,10 @@ public class ProtocolRuntime {
     private static final Logger log = LoggerFactory.getLogger(ProtocolRuntime.class);
 
     private final long protocolId;
-    private final String name;
+    private volatile String name;
+    private volatile int sortOrder;
+    private Long scriptVersionId;
+    private volatile long scriptRevision;
     private final String code;
     private final double sampleRate;
     private final int ringBufferSize;
@@ -218,7 +221,7 @@ public class ProtocolRuntime {
                 ringBuffer == null ? ringBufferSize : ringBuffer.remainingCapacity(),
                 metrics.getLastError() != null ? metrics.getLastError()
                         : (router == null ? null : router.getLastError()),
-                lastForwardAtMs(router)
+                lastForwardAtMs(router), sortOrder, scriptVersionId, scriptRevision
         );
     }
 
@@ -231,6 +234,16 @@ public class ProtocolRuntime {
     }
 
     public String getStatus() { return status; }
+    public void updateDisplay(String name, int sortOrder) { this.name = name; this.sortOrder = sortOrder; }
+    public void setScriptIdentity(Long versionId, long revision) {
+        this.scriptVersionId = versionId;
+        this.scriptRevision = revision;
+    }
+    public void updateScriptRevision(Long versionId, long previousRevision, long revision) {
+        if (java.util.Objects.equals(scriptVersionId, versionId) && scriptRevision == previousRevision) {
+            this.scriptRevision = revision;
+        }
+    }
     public String getStatusMessage() { return statusMessage; }
     public long getProtocolId() { return protocolId; }
     public ProtocolMetrics getMetrics() { return metrics; }

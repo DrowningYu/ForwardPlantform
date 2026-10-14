@@ -9,6 +9,14 @@
       <el-col :span="4"><el-card shadow="never"><div class="stat"><div class="num">{{ overview.recordQueueSize ?? 0 }}</div><div class="label">日志队列</div></div></el-card></el-col>
     </el-row>
 
+    <el-alert style="margin-top: 12px" :closable="false" show-icon
+      :type="overview.logWriteStatus === 'DEGRADED' ? 'warning' : 'info'"
+      :title="overview.logWriteStatus === 'DEGRADED' ? '日志入库暂不可用，已暂停收集并自动重试；转发继续' : '日志写入：' + (overview.logWriteStatus === 'READY' ? '就绪' : overview.logWriteStatus || '未知')">
+      <div>最近成功入库：{{ overview.logLastSuccessAt ? new Date(overview.logLastSuccessAt).toLocaleString() : '暂无' }} · 失败次数：{{ overview.logWriteFailures ?? 0 }}</div>
+      <div>未确认写入/丢弃：运行日志 {{ overview.droppedLogs ?? 0 }} 条，转发明细 {{ overview.droppedRecords ?? 0 }} 条</div>
+      <div v-if="overview.logWriteStatus === 'DEGRADED'">{{ overview.logLastFailure }}</div>
+    </el-alert>
+
     <el-row :gutter="16" style="margin-top: 16px">
       <el-col :span="12">
         <el-card shadow="never">

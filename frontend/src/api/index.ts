@@ -41,6 +41,30 @@ export interface Protocol {
   workerThreads: number
   logRetentionDays: number
   sampleRate: number
+  groupId?: number | null
+  sortOrder: number
+}
+
+export interface ProtocolGroup {
+  id: number
+  name: string
+  sortOrder: number
+}
+
+export interface ScriptVersion {
+  id: number
+  protocolId: number
+  version: number
+  revision: number
+  language: string
+  code?: string
+  remark?: string
+  compileStatus: string
+  compileError?: string
+  createdAt: string
+  updatedAt: string
+  current: boolean
+  running: boolean
 }
 
 export interface BindingWarning {
@@ -80,6 +104,10 @@ export interface Overview {
   droppedLogs: number
   droppedRecords: number
   systemResource?: SystemResource
+  logWriteStatus?: 'READY' | 'DEGRADED' | 'STOPPED'
+  logLastSuccessAt?: string | null
+  logWriteFailures?: number
+  logLastFailure?: string | null
 }
 
 export interface RuntimeStatus {
@@ -105,9 +133,16 @@ export interface RuntimeStatus {
   lastError?: string
   /** 最近一次成功转发时间（epoch ms） */
   lastForwardAtMs?: number | null
+  sortOrder: number
+  scriptVersionId?: number | null
+  scriptRevision: number
 }
 
 export const api = {
+  listGroups: (): Promise<ProtocolGroup[]> => http.get('/protocol-groups'),
+  createGroup: (body: { name: string; sortOrder: number }): Promise<ProtocolGroup> => http.post('/protocol-groups', body),
+  updateGroup: (id: number, body: { name: string; sortOrder: number }): Promise<ProtocolGroup> => http.put(`/protocol-groups/${id}`, body),
+  deleteGroup: (id: number): Promise<void> => http.delete(`/protocol-groups/${id}`),
   // 数据源
   listDataSources: (): Promise<ConfigCarrier[]> => http.get('/data-sources'),
   createDataSource: (body: any): Promise<ConfigCarrier> => http.post('/data-sources', body),
@@ -144,11 +179,14 @@ export const api = {
     }),
 
   // 脚本
-  listVersions: (pid: number): Promise<any[]> => http.get(`/protocols/${pid}/scripts`),
-  currentScript: (pid: number): Promise<any> => http.get(`/protocols/${pid}/scripts/current`),
-  getVersion: (pid: number, vid: number): Promise<any> => http.get(`/protocols/${pid}/scripts/${vid}`),
-  saveScript: (pid: number, body: any): Promise<any> => http.post(`/protocols/${pid}/scripts`, body),
-  activateVersion: (pid: number, vid: number): Promise<any> => http.post(`/protocols/${pid}/scripts/${vid}/activate`),
+  listVersions: (pid: number): Promise<ScriptVersion[]> => http.get(`/protocols/${pid}/scripts`),
+  currentScript: (pid: number): Promise<ScriptVersion | null> => http.get(`/protocols/${pid}/scripts/current`),
+  getVersion: (pid: number, vid: number): Promise<ScriptVersion> => http.get(`/protocols/${pid}/scripts/${vid}`),
+  saveScript: (pid: number, body: any): Promise<ScriptVersion> => http.post(`/protocols/${pid}/scripts`, body),
+  reviseScript: (pid: number, vid: number, body: { code: string; remark: string; revision: number }): Promise<ScriptVersion> =>
+    http.put(`/protocols/${pid}/scripts/${vid}`, body),
+  deleteScript: (pid: number, vid: number): Promise<void> => http.delete(`/protocols/${pid}/scripts/${vid}`),
+  activateVersion: (pid: number, vid: number): Promise<ScriptVersion> => http.post(`/protocols/${pid}/scripts/${vid}/activate`),
 
   // 调试
   debugRun: (body: any): Promise<any> => http.post('/debug/run', body),

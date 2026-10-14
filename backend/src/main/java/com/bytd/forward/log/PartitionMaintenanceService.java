@@ -7,7 +7,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
+import jakarta.annotation.PreDestroy;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -32,6 +36,13 @@ public class PartitionMaintenanceService {
     private final JdbcTemplate jdbcTemplate;
     private final ForwardProperties props;
     private final ProtocolRepository protocolRepository;
+    private final ReentrantLock maintenanceLock = new ReentrantLock();
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "partition-maintenance");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private LocalDate lastMaintained;
 
     public PartitionMaintenanceService(JdbcTemplate jdbcTemplate, ForwardProperties props,
                                        ProtocolRepository protocolRepository) {
@@ -42,29 +53,43 @@ public class PartitionMaintenanceService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onStartup() {
+        scheduler.scheduleWithFixedDelay(this::daily, 0, 60, TimeUnit.SECONDS);
+    }
+
+    @PreDestroy
+    public void stop() { scheduler.shutdownNow(); }
+
+    /** 独立线程每天维护；失败每分钟重试，不占用指标调度线程。 */
+    public void daily() {
+        if (LocalDate.now().equals(lastMaintained) || !maintenanceLock.tryLock()) return;
         try {
+            // 启动时立即维护；后续保留原先每天 00:10 的维护时间。
+            if (lastMaintained != null && java.time.LocalTime.now().isBefore(java.time.LocalTime.of(0, 10))) return;
             ensurePartitions();
             dropExpiredPartitions();
+            lastMaintained = LocalDate.now();
         } catch (Exception e) {
-            log.error("启动时分区维护失败: {}", e.getMessage(), e);
+            log.warn("分区维护失败，将重试: {}", DatabaseFailureSummary.of(e));
+        } finally {
+            maintenanceLock.unlock();
         }
     }
 
-    /** 每天 00:10 维护分区。 */
-    @Scheduled(cron = "0 10 0 * * *")
-    public void daily() {
-        ensurePartitions();
-        dropExpiredPartitions();
-    }
-
     public void ensurePartitions() {
-        int preDays = props.getPartition().getPreCreateDays();
-        LocalDate today = LocalDate.now();
-        for (String parent : PARENT_TABLES) {
-            for (int i = 0; i <= preDays; i++) {
-                LocalDate day = today.plusDays(i);
-                createPartition(parent, day);
+        // 日常维护与恢复补建互斥，避免同时 CREATE 同名分区。
+        // 恢复线程不无限等待另一个数据库操作。
+        if (!maintenanceLock.tryLock()) throw new IllegalStateException("分区维护正在进行");
+        try {
+            int preDays = props.getPartition().getPreCreateDays();
+            LocalDate today = LocalDate.now();
+            for (String parent : PARENT_TABLES) {
+                for (int i = 0; i <= preDays; i++) {
+                    LocalDate day = today.plusDays(i);
+                    createPartition(parent, day);
+                }
             }
+        } finally {
+            maintenanceLock.unlock();
         }
     }
 
@@ -75,11 +100,7 @@ public class PartitionMaintenanceService {
         String sql = "CREATE TABLE IF NOT EXISTS " + child
                 + " PARTITION OF " + parent
                 + " FOR VALUES FROM ('" + from + "') TO ('" + to + "')";
-        try {
-            jdbcTemplate.execute(sql);
-        } catch (Exception e) {
-            log.warn("创建分区 {} 失败: {}", child, e.getMessage());
-        }
+        jdbcTemplate.execute(sql);
     }
 
     public void dropExpiredPartitions() {
@@ -90,12 +111,8 @@ public class PartitionMaintenanceService {
             for (String child : partitions) {
                 LocalDate day = parseDay(parent, child);
                 if (day != null && day.isBefore(cutoff)) {
-                    try {
-                        jdbcTemplate.execute("DROP TABLE IF EXISTS " + child);
-                        log.info("已删除过期分区 {}", child);
-                    } catch (Exception e) {
-                        log.warn("删除分区 {} 失败: {}", child, e.getMessage());
-                    }
+                    jdbcTemplate.execute("DROP TABLE IF EXISTS " + child);
+                    log.info("已删除过期分区 {}", child);
                 }
             }
         }

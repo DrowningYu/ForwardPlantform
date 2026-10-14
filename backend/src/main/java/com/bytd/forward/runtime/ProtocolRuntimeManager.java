@@ -83,6 +83,20 @@ public class ProtocolRuntimeManager {
         return locks.computeIfAbsent(id, k -> new Object());
     }
 
+    public <T> T withProtocolLock(Long id, java.util.function.Supplier<T> work) {
+        synchronized (lockFor(id)) { return work.get(); }
+    }
+
+    public void updateDisplay(Long id, String name, int sortOrder) {
+        ProtocolRuntime runtime = runtimes.get(id);
+        if (runtime != null) runtime.updateDisplay(name, sortOrder);
+    }
+
+    public void updateScriptRevision(Long id, Long versionId, long previousRevision, long revision) {
+        ProtocolRuntime runtime = runtimes.get(id);
+        if (runtime != null) runtime.updateScriptRevision(versionId, previousRevision, revision);
+    }
+
     public void start(Long protocolId) {
         synchronized (lockFor(protocolId)) {
             ProtocolEntity p = protocolRepository.findById(protocolId)
@@ -95,12 +109,15 @@ public class ProtocolRuntimeManager {
 
             DataSourceEntity ds = requireSource(p);
             OutputTargetEntity target = requireTarget(p);
-            String code = requireCode(p);
+            ScriptVersionEntity version = requireVersion(p);
+            String code = version.getCode();
 
             ProtocolRuntime runtime = new ProtocolRuntime(
                     p.getId(), p.getName(), code, p.getSampleRate(),
                     p.getRingBufferSize(), p.getWorkerThreads(), p.getSourceTopics(),
                     ds, target, engine, sharedSources, sharedSinks, logWriter, mapper);
+            runtime.updateDisplay(p.getName(), p.getSortOrder());
+            runtime.setScriptIdentity(version.getId(), version.getRevision());
 
             try {
                 runtime.start();
@@ -166,7 +183,7 @@ public class ProtocolRuntimeManager {
     public List<RuntimeStatus> allStatuses() {
         List<RuntimeStatus> list = new ArrayList<>();
         runtimes.values().forEach(r -> list.add(r.snapshot()));
-        list.sort(Comparator.comparingLong(RuntimeStatus::protocolId));
+        list.sort(Comparator.comparingInt(RuntimeStatus::sortOrder).thenComparingLong(RuntimeStatus::protocolId));
         return list;
     }
 
@@ -186,13 +203,13 @@ public class ProtocolRuntimeManager {
                 .orElseThrow(() -> new IllegalStateException("输出目标不存在: " + p.getOutputTargetId()));
     }
 
-    private String requireCode(ProtocolEntity p) {
+    private ScriptVersionEntity requireVersion(ProtocolEntity p) {
         if (p.getCurrentVersionId() == null) {
             throw new IllegalStateException("协议未配置脚本版本");
         }
         ScriptVersionEntity v = scriptVersionRepository.findById(p.getCurrentVersionId())
                 .orElseThrow(() -> new IllegalStateException("脚本版本不存在: " + p.getCurrentVersionId()));
-        return v.getCode();
+        return v;
     }
 
     @EventListener(ApplicationReadyEvent.class)

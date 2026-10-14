@@ -28,6 +28,10 @@ public class ForwardProperties {
         private int queueCapacity = 100000;
         private int batchSize = 500;
         private long flushIntervalMs = 1000;
+        private long recoveryIntervalMs = 30000;
+
+        public long getRecoveryIntervalMs() { return recoveryIntervalMs; }
+        public void setRecoveryIntervalMs(long value) { recoveryIntervalMs = value; }
 
         public int getQueueCapacity() { return queueCapacity; }
         public void setQueueCapacity(int queueCapacity) { this.queueCapacity = queueCapacity; }

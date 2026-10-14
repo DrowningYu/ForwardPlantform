@@ -31,6 +31,15 @@ public class ProtocolEntity {
 
     private String description;
 
+    @Column(name = "group_id")
+    private Long groupId;
+
+    @Column(name = "sort_order", nullable = false)
+    private int sortOrder;
+
+    @Column(name = "next_script_version", nullable = false)
+    private int nextScriptVersion = 2;
+
     /** STOPPED / STARTING / RUNNING / ERROR */
     @Column(nullable = false)
     private String status = "STOPPED";

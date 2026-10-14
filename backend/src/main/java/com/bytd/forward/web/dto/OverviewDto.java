@@ -11,6 +11,10 @@ public record OverviewDto(
         int recordQueueSize,
         long droppedLogs,
         long droppedRecords,
-        SystemResourceDto systemResource
+        SystemResourceDto systemResource,
+        String logWriteStatus,
+        java.time.Instant logLastSuccessAt,
+        long logWriteFailures,
+        String logLastFailure
 ) {
 }
